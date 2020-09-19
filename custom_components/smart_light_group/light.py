@@ -42,14 +42,14 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 from homeassistant.util import color as color_util
 
-from . import GroupEntity
+from homeassistant.components.group import GroupEntity
 
 # mypy: allow-incomplete-defs, allow-untyped-calls, allow-untyped-defs
 # mypy: no-check-untyped-defs
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_NAME = "Light Group"
+DEFAULT_NAME = "Smart Light Group"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
