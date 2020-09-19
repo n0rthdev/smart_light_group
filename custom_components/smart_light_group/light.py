@@ -43,6 +43,7 @@ from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 from homeassistant.util import color as color_util
 
 from homeassistant.components.group import GroupEntity
+# from homeassistant.components.group.light import LightGroup
 
 # mypy: allow-incomplete-defs, allow-untyped-calls, allow-untyped-defs
 # mypy: no-check-untyped-defs
@@ -51,10 +52,20 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NAME = "Smart Light Group"
 
+LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "lower_bound_color_temperature_white_lights"
+UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "upper_bound_color_temperature_white_lights"
+UPPER_BOUND_SATURATION_WHITE_LIGHTS = "upper_bound_saturation_white_lights"
+LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS = "lower_bound_brightness_non_dimmable_lights"
+
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Required(CONF_ENTITIES): cv.entities_domain(light.DOMAIN),
+        vol.Optional(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=175): cv.positive_int,
+        vol.Optional(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=450): cv.positive_int,
+        vol.Optional(UPPER_BOUND_SATURATION_WHITE_LIGHTS, default=55): cv.positive_int,
+        vol.Optional(LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS, default=205): cv.positive_int,
     }
 )
 
@@ -96,6 +107,12 @@ class SmartLightGroup(GroupEntity, light.LightEntity):
         self._effect_list: Optional[List[str]] = None
         self._effect: Optional[str] = None
         self._supported_features: int = 0
+
+        self._default_brightness: int = 255
+        self._default_h: float = 50.0
+        self._default_s: float = 40.0
+        self._default_color_temp: int = 320
+        self._default_whitevalue: int = 255
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
@@ -185,18 +202,30 @@ class SmartLightGroup(GroupEntity, light.LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Forward the turn_on command to all lights in the light group."""
+        is_off = not self._is_on
         data = {ATTR_ENTITY_ID: self._entity_ids}
         emulate_color_temp_entity_ids = []
 
         if ATTR_BRIGHTNESS in kwargs:
             data[ATTR_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
+        elif is_off:
+            data[ATTR_BRIGHTNESS] = self._default_brightness
 
         if ATTR_HS_COLOR in kwargs:
             data[ATTR_HS_COLOR] = kwargs[ATTR_HS_COLOR]
+            # _LOGGER.warn(kwargs)
+            # _LOGGER.warn(kwargs[ATTR_HS_COLOR])
+            # _LOGGER.warn((self._default_h, self._default_s))
+            # _LOGGER.warn([self._default_h, self._default_s])
+        # elif is_off:
+        #     data[ATTR_HS_COLOR] = (self._default_h, self._default_s)
 
         if ATTR_COLOR_TEMP in kwargs:
             data[ATTR_COLOR_TEMP] = kwargs[ATTR_COLOR_TEMP]
+        elif is_off and ATTR_HS_COLOR not in data:
+            data[ATTR_COLOR_TEMP] = self._default_color_temp
 
+        if ATTR_COLOR_TEMP in data:
             # Create a new entity list to mutate
             updated_entities = list(self._entity_ids)
 
@@ -216,6 +245,8 @@ class SmartLightGroup(GroupEntity, light.LightEntity):
 
         if ATTR_WHITE_VALUE in kwargs:
             data[ATTR_WHITE_VALUE] = kwargs[ATTR_WHITE_VALUE]
+        elif is_off:
+            data[ATTR_WHITE_VALUE] = self._default_whitevalue
 
         if ATTR_EFFECT in kwargs:
             data[ATTR_EFFECT] = kwargs[ATTR_EFFECT]
