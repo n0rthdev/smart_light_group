@@ -74,11 +74,11 @@ async def async_setup_platform(
 ) -> None:
     """Initialize light.group platform."""
     async_add_entities(
-        [LightGroup(cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES])]
+        [SmartLightGroup(cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES])]
     )
 
 
-class LightGroup(GroupEntity, light.LightEntity):
+class SmartLightGroup(GroupEntity, light.LightEntity):
     """Representation of a light group."""
 
     def __init__(self, name: str, entity_ids: List[str]) -> None:
