@@ -1,4 +1,4 @@
-# Philips TV Ambilight+Hue (Switch) Component
+# SmartLightGroup
 A Switch component for automating the control of the Ambilight+hue setting on a Philips TV, this reveals the current status of the menu setting to Home Assistant, and allows for remote or automated toggling.
 ## Configuration
 
