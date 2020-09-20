@@ -2,6 +2,7 @@
   "domain": "smart_light_group",
   "name": "Smart Light Group",
   "documentation": "https://github.com/martinweu/smart_light_group",
+  "issue_tracker": "https://github.com/martinweu/smart_light_group/issues",
   "dependencies": [],
   "codeowners": ["@martinweu"],
   "requirements": []
