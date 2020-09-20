@@ -199,7 +199,7 @@ class SmartLightGroup(LightGroup):
             else:
                 non_dimmable_entity_ids.append(entity_id)  # regular white on/off light
 
-        _LOGGER.warn(self._name + ": " +
+        _LOGGER.debug(self._name + ": " +
                      "Entities: temperature_and_color: " + str(temperature_and_color_entity_ids) +
                      ", color_and_white: " + str(color_and_white_entity_ids) +
                      ", color: " + str(color_entity_ids) +
@@ -212,7 +212,7 @@ class SmartLightGroup(LightGroup):
         old_hs_color = self._hs_color
         old_white_value = self._white_value
 
-        _LOGGER.warn(self._name + ": " + "Old Values: "
+        _LOGGER.debug(self._name + ": " + "Old Values: "
                                          ", old_brightness: " + str(old_brightness) +
                      ", old_color_temp: " + str(old_color_temp) +
                      ", old_hs_color: " + str(old_hs_color) +
@@ -263,12 +263,12 @@ class SmartLightGroup(LightGroup):
             new_white_value = old_white_value
             apply_white_value = False
 
-        _LOGGER.warn(self._name + ": " + "Kwargs " + str(kwargs) +
+        _LOGGER.debug(self._name + ": " + "Kwargs " + str(kwargs) +
                      ", apply_brightness: " + str(apply_brightness) +
                      ", apply_color_temp: " + str(apply_color_temp) +
                      ", apply_hs_color: " + str(apply_hs_color) +
                      ", apply_white_value: " + str(apply_white_value))
-        _LOGGER.warn(self._name + ": " + "New Values: " +
+        _LOGGER.debug(self._name + ": " + "New Values: " +
                      ", new_brightness: " + str(new_brightness) +
                      ", new_color_temp: " + str(new_color_temp) +
                      ", new_hs_color: " + str(new_hs_color) +
@@ -295,7 +295,7 @@ class SmartLightGroup(LightGroup):
                 apply_hs_color or apply_color_temp or apply_brightness):
             new_white_value = self._calculate_white_value(new_hs_color, new_brightness)
 
-        _LOGGER.warn(self._name + ": " + "New Values Final: " +
+        _LOGGER.debug(self._name + ": " + "New Values Final: " +
                      "new_brightness: " + str(new_brightness) +
                      ", new_color_temp: " + str(new_color_temp) +
                      ", new_hs_color: " + str(new_hs_color) +
