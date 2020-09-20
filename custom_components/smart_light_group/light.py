@@ -213,6 +213,9 @@ class SmartLightGroup(GroupEntity, light.LightEntity):
 
         if ATTR_HS_COLOR in kwargs:
             data[ATTR_HS_COLOR] = kwargs[ATTR_HS_COLOR]
+            # rgb = color_util.color_hsv_to_RGB(
+            #     hs_color[0], hs_color[1], brightness / 255 * 100
+            # )
             # _LOGGER.warn(kwargs)
             # _LOGGER.warn(kwargs[ATTR_HS_COLOR])
             # _LOGGER.warn((self._default_h, self._default_s))
