@@ -64,7 +64,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_ENTITIES): cv.entities_domain(light.DOMAIN),
         vol.Optional(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=175): cv.positive_int,
         vol.Optional(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=450): cv.positive_int,
-        vol.Optional(UPPER_BOUND_SATURATION_WHITE_LIGHTS, default=55.0): vol.All(vol.Coerce(float),
+        vol.Optional(UPPER_BOUND_SATURATION_WHITE_LIGHTS, default=80.0): vol.All(vol.Coerce(float),
                                                                                  vol.Range(min=0, max=255)),
         vol.Optional(LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS, default=205): cv.positive_int,
     }
