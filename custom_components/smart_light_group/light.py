@@ -43,6 +43,7 @@ from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 from homeassistant.util import color as color_util
 
 from homeassistant.components.group import GroupEntity
+
 # from homeassistant.components.group.light import LightGroup
 
 # mypy: allow-incomplete-defs, allow-untyped-calls, allow-untyped-defs
@@ -57,31 +58,31 @@ UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "upper_bound_color_temperature_whit
 UPPER_BOUND_SATURATION_WHITE_LIGHTS = "upper_bound_saturation_white_lights"
 LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS = "lower_bound_brightness_non_dimmable_lights"
 
-
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Required(CONF_ENTITIES): cv.entities_domain(light.DOMAIN),
         vol.Optional(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=175): cv.positive_int,
         vol.Optional(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=450): cv.positive_int,
-        vol.Optional(UPPER_BOUND_SATURATION_WHITE_LIGHTS, default=55): cv.positive_int,
+        vol.Optional(UPPER_BOUND_SATURATION_WHITE_LIGHTS, default=55.0): vol.All(vol.Coerce(float),
+                                                                                 vol.Range(min=0, max=255)),
         vol.Optional(LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS, default=205): cv.positive_int,
     }
 )
 
 SUPPORT_GROUP_LIGHT = (
-    SUPPORT_BRIGHTNESS
-    | SUPPORT_COLOR_TEMP
-    | SUPPORT_EFFECT
-    | SUPPORT_FLASH
-    | SUPPORT_COLOR
-    | SUPPORT_TRANSITION
-    | SUPPORT_WHITE_VALUE
+        SUPPORT_BRIGHTNESS
+        | SUPPORT_COLOR_TEMP
+        | SUPPORT_EFFECT
+        | SUPPORT_FLASH
+        | SUPPORT_COLOR
+        | SUPPORT_TRANSITION
+        | SUPPORT_WHITE_VALUE
 )
 
 
 async def async_setup_platform(
-    hass: HomeAssistantType, config: ConfigType, async_add_entities, discovery_info=None
+        hass: HomeAssistantType, config: ConfigType, async_add_entities, discovery_info=None
 ) -> None:
     """Initialize light.group platform."""
     async_add_entities(
@@ -113,6 +114,13 @@ class SmartLightGroup(GroupEntity, light.LightEntity):
         self._default_s: float = 40.0
         self._default_color_temp: int = 320
         self._default_whitevalue: int = 255
+
+        self._auto_convert_temp_to_hs: bool = True
+        self._auto_adapt_white_value: bool = True
+        self._threshold_lower_temperature_white_lights = 175
+        self._threshold_upper_temperature_white_lights = 450
+        self._threshold_upper_saturation_white_lights = 55
+        self._threshold_lower_brightness_non_dimmable_lights = 205
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
@@ -200,102 +208,250 @@ class SmartLightGroup(GroupEntity, light.LightEntity):
         """Return the state attributes for the light group."""
         return {ATTR_ENTITY_ID: self._entity_ids}
 
+    def _non_dimmable_on(self, brightness: int, saturation: float) -> bool:
+        return (brightness > self._threshold_lower_brightness_non_dimmable_lights) and (
+                saturation < self._threshold_upper_saturation_white_lights)
+
+    def _brightness_for_dimmable(self, brightness: int, saturation: float) -> int:
+        return brightness if (saturation < self._threshold_upper_saturation_white_lights) else 0
+
+    def _brightness_for_temperature(self, brightness: int, saturation: float) -> int:
+        return brightness if (saturation < self._threshold_upper_saturation_white_lights) else 0
+
+    def _hs_color_for_temperature(self, temperature: int) -> Tuple[float, float]:
+        temp_k = color_util.color_temperature_mired_to_kelvin(temperature)
+        hs_color = color_util.color_temperature_to_hs(temp_k)
+        return hs_color
+
+    def _calculate_white_value(self, hs_color: Tuple[float, float], brightness: int) -> int:
+        if hs_color[1] < self._threshold_upper_saturation_white_lights:
+            rgb = color_util.color_hsv_to_RGB(hs_color[0], hs_color[1], brightness / 255 * 100)
+            return min(rgb) * brightness
+        else:
+            return 0
+
     async def async_turn_on(self, **kwargs):
         """Forward the turn_on command to all lights in the light group."""
         is_off = not self._is_on
-        data = {ATTR_ENTITY_ID: self._entity_ids}
-        emulate_color_temp_entity_ids = []
+
+        temperature_and_color_entity_ids = []
+        color_and_white_entity_ids = []
+        color_entity_ids = []
+        temperature_entity_ids = []
+        dimmable_entity_ids = []
+        non_dimmable_entity_ids = []
+
+        for entity_id in self._entity_ids:
+            state = self.hass.states.get(entity_id)
+            if not state:
+                continue
+            support = state.attributes.get(ATTR_SUPPORTED_FEATURES)
+
+            sup_bri = bool(support & SUPPORT_BRIGHTNESS)
+            sup_col = bool(support & SUPPORT_COLOR)
+            sup_white_value = bool(support & SUPPORT_WHITE_VALUE)
+            sup_temp = bool(support & SUPPORT_COLOR_TEMP)
+
+            if sup_bri and sup_col and sup_temp:
+                temperature_and_color_entity_ids.append(entity_id)  # hue color
+            elif sup_bri and sup_col and sup_white_value:
+                color_and_white_entity_ids.append(entity_id)  # rgbw strips
+            elif sup_bri and sup_col:
+                color_entity_ids.append(entity_id)  # rgb strips
+            elif sup_bri and sup_temp:
+                temperature_entity_ids.append(entity_id)  # hue ambiance white
+            elif sup_bri:
+                dimmable_entity_ids.append(entity_id)  # hue white
+            else:
+                non_dimmable_entity_ids.append(entity_id)  # regular white on/of light
+
+        _LOGGER.warn(
+            "Entities: temperature_and_color: " + str(temperature_and_color_entity_ids) +
+            ", color_and_white: " + str(color_and_white_entity_ids) +
+            ", color: " + str(color_entity_ids) +
+            ", temperature: " + str(temperature_entity_ids) +
+            ", dimmable: " + str(dimmable_entity_ids) +
+            ", non_dimmable: " + str(non_dimmable_entity_ids))
+
+        old_brightness = self._brightness
+        old_color_temp = self._color_temp
+        old_hs_color = self._hs_color
+        old_white_value = self._white_value
+
+
+        _LOGGER.warn("Old Values: "
+                     ", old_brightness: " + str(old_brightness) +
+                     ", old_color_temp: " + str(old_color_temp) +
+                     ", old_hs_color: " + str(old_hs_color) +
+                     ", old_white_value: " + str(old_white_value))
+
+        # old_non_dimmable_on = self._non_dimmable_on(old_brightness, old_hs_color[1])
+        # old_brightness_temperature = self._brightness_for_temperature(old_brightness, old_hs_color[1])
+        # old_emulated_temperature_as_hs_color = self._hs_color_for_temperature(old_color_temp)
+        # old_emulated_white_value = self._calculate_white_value(old_hs_color)
 
         if ATTR_BRIGHTNESS in kwargs:
-            data[ATTR_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
-        elif is_off:
-            data[ATTR_BRIGHTNESS] = self._default_brightness
-
-        if ATTR_HS_COLOR in kwargs:
-            data[ATTR_HS_COLOR] = kwargs[ATTR_HS_COLOR]
-            # rgb = color_util.color_hsv_to_RGB(
-            #     hs_color[0], hs_color[1], brightness / 255 * 100
-            # )
-            # _LOGGER.warn(kwargs)
-            # _LOGGER.warn(kwargs[ATTR_HS_COLOR])
-            # _LOGGER.warn((self._default_h, self._default_s))
-            # _LOGGER.warn([self._default_h, self._default_s])
-        # elif is_off:
-        #     data[ATTR_HS_COLOR] = (self._default_h, self._default_s)
+            new_brightness = kwargs[ATTR_BRIGHTNESS]
+            apply_brightness = True
+        elif is_off or old_brightness is None:
+            new_brightness = self._default_brightness
+            apply_brightness = is_off
+        else:
+            new_brightness = old_brightness
+            apply_brightness = False
 
         if ATTR_COLOR_TEMP in kwargs:
-            data[ATTR_COLOR_TEMP] = kwargs[ATTR_COLOR_TEMP]
-        elif is_off and ATTR_HS_COLOR not in data:
-            data[ATTR_COLOR_TEMP] = self._default_color_temp
+            new_color_temp = kwargs[ATTR_COLOR_TEMP]
+            apply_color_temp = True
+        elif is_off or old_color_temp is None:
+            new_color_temp = self._default_color_temp
+            apply_color_temp = is_off
+        else:
+            new_color_temp = old_color_temp
+            apply_color_temp = False
 
-        if ATTR_COLOR_TEMP in data:
-            # Create a new entity list to mutate
-            updated_entities = list(self._entity_ids)
-
-            # Walk through initial entity ids, split entity lists by support
-            for entity_id in self._entity_ids:
-                state = self.hass.states.get(entity_id)
-                if not state:
-                    continue
-                support = state.attributes.get(ATTR_SUPPORTED_FEATURES)
-                # Only pass color temperature to supported entity_ids
-                if bool(support & SUPPORT_COLOR) and not bool(
-                    support & SUPPORT_COLOR_TEMP
-                ):
-                    emulate_color_temp_entity_ids.append(entity_id)
-                    updated_entities.remove(entity_id)
-                    data[ATTR_ENTITY_ID] = updated_entities
+        if ATTR_HS_COLOR in kwargs:
+            new_hs_color = kwargs[ATTR_HS_COLOR]
+            apply_hs_color = True
+        elif is_off or old_hs_color is None:
+            new_hs_color = (self._default_h, self._default_s)
+            apply_hs_color = is_off
+        else:
+            new_hs_color = old_hs_color
+            apply_hs_color = False
 
         if ATTR_WHITE_VALUE in kwargs:
-            data[ATTR_WHITE_VALUE] = kwargs[ATTR_WHITE_VALUE]
-        elif is_off:
-            data[ATTR_WHITE_VALUE] = self._default_whitevalue
+            new_white_value = kwargs[ATTR_WHITE_VALUE]
+            apply_white_value = True
+        elif is_off or old_white_value is None:
+            new_white_value = self._default_whitevalue
+            apply_white_value = is_off
+        else:
+            new_white_value = old_white_value
+            apply_white_value = False
 
-        if ATTR_EFFECT in kwargs:
-            data[ATTR_EFFECT] = kwargs[ATTR_EFFECT]
+        _LOGGER.warn("Kwargs " + str(kwargs) +
+                     ", apply_brightness: " + str(apply_brightness) +
+                     ", apply_color_temp: " + str(apply_color_temp) +
+                     ", apply_hs_color: " + str(apply_hs_color) +
+                     ", apply_white_value: " + str(apply_white_value))
+        _LOGGER.warn("New Values: "
+                     ", new_brightness: " + str(new_brightness) +
+                     ", new_color_temp: " + str(new_color_temp) +
+                     ", new_hs_color: " + str(new_hs_color) +
+                     ", new_white_value: " + str(new_white_value))
 
-        if ATTR_TRANSITION in kwargs:
-            data[ATTR_TRANSITION] = kwargs[ATTR_TRANSITION]
+        if self._auto_convert_temp_to_hs and apply_color_temp and not apply_hs_color:
+            new_hs_color = self._hs_color_for_temperature(new_color_temp)
+            apply_hs_color = True
 
-        if ATTR_FLASH in kwargs:
-            data[ATTR_FLASH] = kwargs[ATTR_FLASH]
+        new_non_dimmable_on = self._non_dimmable_on(new_brightness, new_hs_color[1])
 
-        if not emulate_color_temp_entity_ids:
-            await self.hass.services.async_call(
-                light.DOMAIN,
-                light.SERVICE_TURN_ON,
-                data,
-                blocking=True,
-                context=self._context,
+        new_brightness_for_dimmable = self._brightness_for_dimmable(new_brightness, new_hs_color[1])
+
+        if not apply_color_temp and apply_hs_color:
+            new_brightness_for_temperature = self._brightness_for_temperature(new_brightness, new_hs_color[1])
+        else:
+            new_brightness_for_temperature = new_brightness
+
+        if self._auto_convert_temp_to_hs and not apply_white_value and (
+                apply_hs_color or apply_color_temp or apply_brightness):
+            new_white_value = self._calculate_white_value(new_hs_color, new_brightness)
+
+        _LOGGER.warn("New Values Final: "
+                     ", new_brightness: " + str(new_brightness) +
+                     ", new_color_temp: " + str(new_color_temp) +
+                     ", new_hs_color: " + str(new_hs_color) +
+                     ", new_white_value: " + str(new_white_value) +
+                     ", new_non_dimmable_on: " + str(new_non_dimmable_on) +
+                     ", new_brightness_for_dimmable: " + str(new_brightness_for_dimmable) +
+                     ", new_brightness_for_temperature: " + str(new_brightness_for_temperature))
+
+
+        commands = []
+
+        if non_dimmable_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = non_dimmable_entity_ids
+
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON if new_non_dimmable_on else light.SERVICE_TURN_OFF,
+                    data.copy(),
+                    blocking=True,
+                    context=self._context,
+                )
             )
-            return
 
-        emulate_color_temp_data = data.copy()
-        temp_k = color_util.color_temperature_mired_to_kelvin(
-            emulate_color_temp_data[ATTR_COLOR_TEMP]
-        )
-        hs_color = color_util.color_temperature_to_hs(temp_k)
-        emulate_color_temp_data[ATTR_HS_COLOR] = hs_color
-        del emulate_color_temp_data[ATTR_COLOR_TEMP]
+        if dimmable_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = dimmable_entity_ids
+            data[ATTR_BRIGHTNESS] = new_brightness_for_dimmable
 
-        emulate_color_temp_data[ATTR_ENTITY_ID] = emulate_color_temp_entity_ids
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON,
+                    data.copy(),
+                    blocking=True,
+                    context=self._context,
+                )
+            )
 
-        await asyncio.gather(
-            self.hass.services.async_call(
-                light.DOMAIN,
-                light.SERVICE_TURN_ON,
-                data,
-                blocking=True,
-                context=self._context,
-            ),
-            self.hass.services.async_call(
-                light.DOMAIN,
-                light.SERVICE_TURN_ON,
-                emulate_color_temp_data,
-                blocking=True,
-                context=self._context,
-            ),
-        )
+        if temperature_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = temperature_entity_ids
+            data[ATTR_BRIGHTNESS] = new_brightness_for_temperature
+            data[ATTR_COLOR_TEMP] = new_color_temp
+
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON,
+                    data.copy(),
+                    blocking=True,
+                    context=self._context,
+                )
+            )
+        if color_and_white_entity_ids + color_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = color_and_white_entity_ids + color_entity_ids
+            data[ATTR_BRIGHTNESS] = new_brightness
+            data[ATTR_HS_COLOR] = new_hs_color
+            data[ATTR_WHITE_VALUE] = new_white_value
+
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON,
+                    data.copy(),
+                    blocking=True,
+                    context=self._context,
+                )
+            )
+
+        if temperature_and_color_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = temperature_and_color_entity_ids
+            data[ATTR_BRIGHTNESS] = new_brightness
+            if apply_hs_color and not apply_color_temp:
+                data[ATTR_HS_COLOR] = new_hs_color
+            else:
+                data[ATTR_COLOR_TEMP] = new_color_temp
+
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON,
+                    data.copy(),
+                    blocking=True,
+                    context=self._context,
+                )
+            )
+
+        if commands:
+            await asyncio.gather(*commands)
 
     async def async_turn_off(self, **kwargs):
         """Forward the turn_off command to all lights in the light group."""
@@ -377,10 +533,10 @@ def _mean_tuple(*args):
 
 
 def _reduce_attribute(
-    states: List[State],
-    key: str,
-    default: Optional[Any] = None,
-    reduce: Callable[..., Any] = _mean_int,
+        states: List[State],
+        key: str,
+        default: Optional[Any] = None,
+        reduce: Callable[..., Any] = _mean_int,
 ) -> Any:
     """Find the first attribute matching key from states.
     If none are found, return default.
