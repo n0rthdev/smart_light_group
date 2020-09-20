@@ -44,7 +44,7 @@ This repository is compatible with the Home Assistant Community Store ([HACS](ht
 After installing HACS, install 'SmartGroup' from the store, and use the ```configuration.yaml``` example below.
 
 #### Option 2: (manual)
-If you have already set up the [Smartin Light Group](https://github.com/martinweu/smart_light_group), installing this component is very simple, copy the ```smart_light_group``` directory into your ```config/custom_components/``` directory,
+If you have already set up the [Smart Light Group](https://github.com/martinweu/smart_light_group), installing this component is very simple, copy the ```smart_light_group``` directory into your ```config/custom_components/``` directory,
 
 ## Thanks to 
-- https://github.com/jomwells whos [Philips TV Ambilight+Hue (Switch) Component] (https://github.com/jomwells/ambihue) I used as a starting point for this (my first home assistant platform).
+- @jomwells whos [Philips TV Ambilight+Hue (Switch) Component](https://github.com/jomwells/ambihue) I used as a starting point for this (my first home assistant platform).
