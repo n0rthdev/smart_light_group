@@ -1,5 +1,5 @@
 # SmartLightGroup
-This is platform is derived from the regular Home Assistant LightGroup and offers the same services just a bit smarter.
+This platform is derived from the regular Home Assistant LightGroup and offers the same services just a bit smarter.
 
 ## When do you benefit from using it
 - If you have different light types within the same group and would like to switch them smarter
