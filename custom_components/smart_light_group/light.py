@@ -140,7 +140,7 @@ class SmartLightGroup(LightGroup):
     def _calculate_white_value(self, hs_color: Tuple[float, float], brightness: int) -> int:
         if hs_color[1] < self._threshold_upper_saturation_white_lights:
             rgb = color_util.color_hsv_to_RGB(hs_color[0], hs_color[1], brightness / 255 * 100)
-            return min(rgb) * brightness
+            return (int)(min(rgb) * (brightness / 255.0))
         else:
             return 0
 
@@ -328,12 +328,29 @@ class SmartLightGroup(LightGroup):
                     context=self._context,
                 )
             )
-        if color_and_white_entity_ids + color_entity_ids:
+
+        if color_and_white_entity_ids:
             data = {}
-            data[ATTR_ENTITY_ID] = color_and_white_entity_ids + color_entity_ids
+            data[ATTR_ENTITY_ID] = color_and_white_entity_ids
             data[ATTR_BRIGHTNESS] = new_brightness
             data[ATTR_HS_COLOR] = new_hs_color
             data[ATTR_WHITE_VALUE] = new_white_value
+
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON,
+                    data.copy(),
+                    blocking=True,
+                    context=self._context,
+                )
+            )
+
+        if color_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = color_entity_ids
+            data[ATTR_BRIGHTNESS] = new_brightness
+            data[ATTR_HS_COLOR] = new_hs_color
 
             commands.append(
                 self.hass.services.async_call(
