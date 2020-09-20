@@ -1,9 +1,7 @@
 """This platform allows several lights to be grouped into one light."""
 import asyncio
-from collections import Counter
-import itertools
 import logging
-from typing import Any, Callable, Iterator, List, Optional, Tuple, cast
+from typing import Any, Callable, Iterator, List, Optional, Tuple, cast, Dict
 
 import voluptuous as vol
 
@@ -36,13 +34,10 @@ from homeassistant.const import (
     STATE_ON,
     STATE_UNAVAILABLE,
 )
-from homeassistant.core import State
+
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 from homeassistant.util import color as color_util
-
-# from homeassistant.components.group import GroupEntity
 
 from homeassistant.components.group.light import LightGroup
 
@@ -53,20 +48,37 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NAME = "Smart Light Group"
 
+DEFAULT_BRIGHTNESS = "default_brightness"
+DEFAULT_COLOR_TEMP = "default_color_temp"
+DEFAULT_H = "default_h"
+DEFAULT_S = "default_s"
+DEFAULT_WHITE_VALUE = "default_white_value"
+
 LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "lower_bound_color_temperature_white_lights"
 UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "upper_bound_color_temperature_white_lights"
 UPPER_BOUND_SATURATION_WHITE_LIGHTS = "upper_bound_saturation_white_lights"
 LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS = "lower_bound_brightness_non_dimmable_lights"
+AUTO_ADAPT_WHITE_VALUE = "auto_adapt_white_value"
+AUTO_CONVERT_COLOR_TEMPERATURE_TO_HS = "auto_convert_color_temperature_to_hs"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Required(CONF_ENTITIES): cv.entities_domain(light.DOMAIN),
+
+        vol.Optional(DEFAULT_BRIGHTNESS, default=255): cv.positive_int,
+        vol.Optional(DEFAULT_COLOR_TEMP, default=320): cv.positive_int,
+        vol.Optional(DEFAULT_H, default=50): cv.positive_int,
+        vol.Optional(DEFAULT_S, default=40): cv.positive_int,
+        vol.Optional(DEFAULT_WHITE_VALUE, default=255): cv.positive_int,
+
         vol.Optional(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=175): cv.positive_int,
         vol.Optional(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=450): cv.positive_int,
         vol.Optional(UPPER_BOUND_SATURATION_WHITE_LIGHTS, default=80.0): vol.All(vol.Coerce(float),
                                                                                  vol.Range(min=0, max=255)),
         vol.Optional(LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS, default=205): cv.positive_int,
+        vol.Optional(AUTO_ADAPT_WHITE_VALUE, default=True): vol.Coerce(bool),
+        vol.Optional(AUTO_CONVERT_COLOR_TEMPERATURE_TO_HS, default=True): vol.Coerce(bool),
     }
 )
 
@@ -86,14 +98,14 @@ async def async_setup_platform(
 ) -> None:
     """Initialize light.group platform."""
     async_add_entities(
-        [SmartLightGroup(cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES])]
+        [SmartLightGroup(cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES], config)]
     )
 
 
 class SmartLightGroup(LightGroup):
     """Representation of a light group."""
 
-    def __init__(self, name: str, entity_ids: List[str]) -> None:
+    def __init__(self, name: str, entity_ids: List[str], conf: Dict[str, Any]) -> None:
         """Initialize a light group."""
         self._name = name
         self._entity_ids = entity_ids
@@ -109,24 +121,32 @@ class SmartLightGroup(LightGroup):
         self._effect: Optional[str] = None
         self._supported_features: int = 0
 
-        self._default_brightness: int = 255
-        self._default_h: float = 50.0
-        self._default_s: float = 40.0
-        self._default_color_temp: int = 320
-        self._default_whitevalue: int = 255
+        self._default_brightness: int = conf.get(DEFAULT_BRIGHTNESS)
+        self._default_color_temp: int = conf.get(DEFAULT_COLOR_TEMP)
+        self._default_h: float = conf.get(DEFAULT_H) * 1.0
+        self._default_s: float = conf.get(DEFAULT_S) * 1.0
+        self._default_white_value: int = conf.get(DEFAULT_WHITE_VALUE)
 
-        self._auto_convert_temp_to_hs: bool = True
-        self._auto_adapt_white_value: bool = True
-        self._threshold_lower_temperature_white_lights = 175
-        self._threshold_upper_temperature_white_lights = 450
-        self._threshold_upper_saturation_white_lights = 55
-        self._threshold_lower_brightness_non_dimmable_lights = 205
+        self._auto_convert_temp_to_hs: bool = conf.get(AUTO_CONVERT_COLOR_TEMPERATURE_TO_HS)
+        self._auto_adapt_white_value: bool = conf.get(AUTO_ADAPT_WHITE_VALUE)
+        self._threshold_lower_temperature_white_lights: int = conf.get(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS)
+        self._threshold_upper_temperature_white_lights: int = conf.get(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS)
+        self._threshold_upper_saturation_white_lights: int = conf.get(UPPER_BOUND_SATURATION_WHITE_LIGHTS)
+        self._threshold_lower_brightness_non_dimmable_lights: int = conf.get(LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS)
 
-    def _non_dimmable_on(self, brightness: int, saturation: float) -> bool:
+    def _non_dimmable_on_by_temperature(self, brightness: int, temperature: int) -> bool:
+        return (brightness > self._threshold_lower_brightness_non_dimmable_lights) and (
+                self._threshold_lower_temperature_white_lights <= temperature and temperature <= self._threshold_upper_temperature_white_lights)
+
+    def _non_dimmable_on_by_saturation(self, brightness: int, saturation: float) -> bool:
         return (brightness > self._threshold_lower_brightness_non_dimmable_lights) and (
                 saturation < self._threshold_upper_saturation_white_lights)
 
-    def _brightness_for_dimmable(self, brightness: int, saturation: float) -> int:
+    def _brightness_for_dimmable_by_temperature(self, brightness: int, temperature: int) -> int:
+        return brightness if (
+                self._threshold_lower_temperature_white_lights <= temperature and temperature <= self._threshold_upper_temperature_white_lights) else 0
+
+    def _brightness_for_dimmable_by_saturation(self, brightness: int, saturation: float) -> int:
         return brightness if (saturation < self._threshold_upper_saturation_white_lights) else 0
 
     def _brightness_for_temperature(self, brightness: int, saturation: float) -> int:
@@ -177,24 +197,23 @@ class SmartLightGroup(LightGroup):
             elif sup_bri:
                 dimmable_entity_ids.append(entity_id)  # hue white
             else:
-                non_dimmable_entity_ids.append(entity_id)  # regular white on/of light
+                non_dimmable_entity_ids.append(entity_id)  # regular white on/off light
 
-        _LOGGER.warn(
-            "Entities: temperature_and_color: " + str(temperature_and_color_entity_ids) +
-            ", color_and_white: " + str(color_and_white_entity_ids) +
-            ", color: " + str(color_entity_ids) +
-            ", temperature: " + str(temperature_entity_ids) +
-            ", dimmable: " + str(dimmable_entity_ids) +
-            ", non_dimmable: " + str(non_dimmable_entity_ids))
+        _LOGGER.warn(self._name + ": " +
+                     "Entities: temperature_and_color: " + str(temperature_and_color_entity_ids) +
+                     ", color_and_white: " + str(color_and_white_entity_ids) +
+                     ", color: " + str(color_entity_ids) +
+                     ", temperature: " + str(temperature_entity_ids) +
+                     ", dimmable: " + str(dimmable_entity_ids) +
+                     ", non_dimmable: " + str(non_dimmable_entity_ids))
 
         old_brightness = self._brightness
         old_color_temp = self._color_temp
         old_hs_color = self._hs_color
         old_white_value = self._white_value
 
-
-        _LOGGER.warn("Old Values: "
-                     ", old_brightness: " + str(old_brightness) +
+        _LOGGER.warn(self._name + ": " + "Old Values: "
+                                         ", old_brightness: " + str(old_brightness) +
                      ", old_color_temp: " + str(old_color_temp) +
                      ", old_hs_color: " + str(old_hs_color) +
                      ", old_white_value: " + str(old_white_value))
@@ -238,18 +257,18 @@ class SmartLightGroup(LightGroup):
             new_white_value = kwargs[ATTR_WHITE_VALUE]
             apply_white_value = True
         elif is_off or old_white_value is None:
-            new_white_value = self._default_whitevalue
+            new_white_value = self._default_white_value
             apply_white_value = is_off
         else:
             new_white_value = old_white_value
             apply_white_value = False
 
-        _LOGGER.warn("Kwargs " + str(kwargs) +
+        _LOGGER.warn(self._name + ": " + "Kwargs " + str(kwargs) +
                      ", apply_brightness: " + str(apply_brightness) +
                      ", apply_color_temp: " + str(apply_color_temp) +
                      ", apply_hs_color: " + str(apply_hs_color) +
                      ", apply_white_value: " + str(apply_white_value))
-        _LOGGER.warn("New Values: "
+        _LOGGER.warn(self._name + ": " + "New Values: " +
                      ", new_brightness: " + str(new_brightness) +
                      ", new_color_temp: " + str(new_color_temp) +
                      ", new_hs_color: " + str(new_hs_color) +
@@ -259,28 +278,31 @@ class SmartLightGroup(LightGroup):
             new_hs_color = self._hs_color_for_temperature(new_color_temp)
             apply_hs_color = True
 
-        new_non_dimmable_on = self._non_dimmable_on(new_brightness, new_hs_color[1])
-
-        new_brightness_for_dimmable = self._brightness_for_dimmable(new_brightness, new_hs_color[1])
-
         if not apply_color_temp and apply_hs_color:
+            # Only if HS is given and no color temp is given use HS to determine settings for non_dimmable, dimmable
+            new_non_dimmable_on = self._non_dimmable_on_by_saturation(new_brightness, new_hs_color[1])
+            new_brightness_for_dimmable = self._brightness_for_dimmable_by_saturation(new_brightness, new_hs_color[1])
+            # if only HS specified, temperature lights might be dimmed, or even switched off completely
             new_brightness_for_temperature = self._brightness_for_temperature(new_brightness, new_hs_color[1])
         else:
+            # If color temp given use it to determine settings for non_dimmable, dimmable
+            new_non_dimmable_on = self._non_dimmable_on_by_temperature(new_brightness, new_color_temp)
+            new_brightness_for_dimmable = self._brightness_for_dimmable_by_saturation(new_brightness, new_color_temp)
+            # if color temp specified, temperature lights may use regular brightness
             new_brightness_for_temperature = new_brightness
 
-        if self._auto_convert_temp_to_hs and not apply_white_value and (
+        if self._auto_adapt_white_value and not apply_white_value and (
                 apply_hs_color or apply_color_temp or apply_brightness):
             new_white_value = self._calculate_white_value(new_hs_color, new_brightness)
 
-        _LOGGER.warn("New Values Final: "
-                     ", new_brightness: " + str(new_brightness) +
+        _LOGGER.warn(self._name + ": " + "New Values Final: " +
+                     "new_brightness: " + str(new_brightness) +
                      ", new_color_temp: " + str(new_color_temp) +
                      ", new_hs_color: " + str(new_hs_color) +
                      ", new_white_value: " + str(new_white_value) +
                      ", new_non_dimmable_on: " + str(new_non_dimmable_on) +
                      ", new_brightness_for_dimmable: " + str(new_brightness_for_dimmable) +
                      ", new_brightness_for_temperature: " + str(new_brightness_for_temperature))
-
 
         commands = []
 
@@ -292,7 +314,7 @@ class SmartLightGroup(LightGroup):
                 self.hass.services.async_call(
                     light.DOMAIN,
                     light.SERVICE_TURN_ON if new_non_dimmable_on else light.SERVICE_TURN_OFF,
-                    data.copy(),
+                    data,
                     blocking=True,
                     context=self._context,
                 )
@@ -307,7 +329,7 @@ class SmartLightGroup(LightGroup):
                 self.hass.services.async_call(
                     light.DOMAIN,
                     light.SERVICE_TURN_ON,
-                    data.copy(),
+                    data,
                     blocking=True,
                     context=self._context,
                 )
@@ -323,7 +345,7 @@ class SmartLightGroup(LightGroup):
                 self.hass.services.async_call(
                     light.DOMAIN,
                     light.SERVICE_TURN_ON,
-                    data.copy(),
+                    data,
                     blocking=True,
                     context=self._context,
                 )
@@ -340,7 +362,7 @@ class SmartLightGroup(LightGroup):
                 self.hass.services.async_call(
                     light.DOMAIN,
                     light.SERVICE_TURN_ON,
-                    data.copy(),
+                    data,
                     blocking=True,
                     context=self._context,
                 )
@@ -356,7 +378,7 @@ class SmartLightGroup(LightGroup):
                 self.hass.services.async_call(
                     light.DOMAIN,
                     light.SERVICE_TURN_ON,
-                    data.copy(),
+                    data,
                     blocking=True,
                     context=self._context,
                 )
@@ -375,7 +397,7 @@ class SmartLightGroup(LightGroup):
                 self.hass.services.async_call(
                     light.DOMAIN,
                     light.SERVICE_TURN_ON,
-                    data.copy(),
+                    data,
                     blocking=True,
                     context=self._context,
                 )
