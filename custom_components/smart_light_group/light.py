@@ -212,8 +212,9 @@ class SmartLightGroup(LightGroup):
         old_hs_color = self._hs_color
         old_white_value = self._white_value
 
-        _LOGGER.debug(self._name + ": " + "Old Values: "
-                                         ", old_brightness: " + str(old_brightness) +
+        _LOGGER.debug(self._name + ": " + "Old Values:"
+                     " old_on: " + str(not is_off) +
+                     ", old_brightness: " + str(old_brightness) +
                      ", old_color_temp: " + str(old_color_temp) +
                      ", old_hs_color: " + str(old_hs_color) +
                      ", old_white_value: " + str(old_white_value))
@@ -267,13 +268,27 @@ class SmartLightGroup(LightGroup):
             new_white_value = old_white_value
             apply_white_value = False
 
-        _LOGGER.debug(self._name + ": " + "Kwargs " + str(kwargs) +
+
+        _LOGGER.debug(self._name + " after value updates: " + "Kwargs " + str(kwargs) +
                      ", apply_brightness: " + str(apply_brightness) +
                      ", apply_color_temp: " + str(apply_color_temp) +
                      ", apply_hs_color: " + str(apply_hs_color) +
                      ", apply_white_value: " + str(apply_white_value))
 
-        _LOGGER.debug(self._name + ": " + "New Values: " +
+        _LOGGER.debug(self._name + " after value updates: " + "New Values: " +
+                     ", new_brightness: " + str(new_brightness) +
+                     ", new_color_temp: " + str(new_color_temp) +
+                     ", new_hs_color: " + str(new_hs_color) +
+                     ", new_white_value: " + str(new_white_value))
+
+
+        _LOGGER.debug(self._name + " after applying defaults: " + "Kwargs " + str(kwargs) +
+                     ", apply_brightness: " + str(apply_brightness) +
+                     ", apply_color_temp: " + str(apply_color_temp) +
+                     ", apply_hs_color: " + str(apply_hs_color) +
+                     ", apply_white_value: " + str(apply_white_value))
+
+        _LOGGER.debug(self._name + " after applying defaults: " + "New Values: " +
                      ", new_brightness: " + str(new_brightness) +
                      ", new_color_temp: " + str(new_color_temp) +
                      ", new_hs_color: " + str(new_hs_color) +
