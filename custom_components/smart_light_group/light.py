@@ -233,12 +233,16 @@ class SmartLightGroup(LightGroup):
             new_brightness = old_brightness
             apply_brightness = False
 
+        apply_default_color_temp = ATTR_HS_COLOR not in kwargs
+        apply_default_hs_color = self._auto_convert_temp_to_hs and (ATTR_COLOR_TEMP not in kwargs)
+        apply_default_white_value = self._auto_adapt_white_value and (ATTR_HS_COLOR not in kwargs) and (ATTR_COLOR_TEMP not in kwargs)
+
         if ATTR_COLOR_TEMP in kwargs:
             new_color_temp = kwargs[ATTR_COLOR_TEMP]
             apply_color_temp = True
         elif is_off or old_color_temp is None:
             new_color_temp = self._default_color_temp
-            apply_color_temp = is_off
+            apply_color_temp = is_off and apply_default_color_temp
         else:
             new_color_temp = old_color_temp
             apply_color_temp = False
@@ -248,7 +252,7 @@ class SmartLightGroup(LightGroup):
             apply_hs_color = True
         elif is_off or old_hs_color is None:
             new_hs_color = (self._default_h, self._default_s)
-            apply_hs_color = is_off
+            apply_hs_color = is_off and apply_default_hs_color
         else:
             new_hs_color = old_hs_color
             apply_hs_color = False
@@ -258,7 +262,7 @@ class SmartLightGroup(LightGroup):
             apply_white_value = True
         elif is_off or old_white_value is None:
             new_white_value = self._default_white_value
-            apply_white_value = is_off
+            apply_white_value = is_off and apply_default_white_value
         else:
             new_white_value = old_white_value
             apply_white_value = False
@@ -268,6 +272,7 @@ class SmartLightGroup(LightGroup):
                      ", apply_color_temp: " + str(apply_color_temp) +
                      ", apply_hs_color: " + str(apply_hs_color) +
                      ", apply_white_value: " + str(apply_white_value))
+
         _LOGGER.debug(self._name + ": " + "New Values: " +
                      ", new_brightness: " + str(new_brightness) +
                      ", new_color_temp: " + str(new_color_temp) +
