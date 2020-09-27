@@ -131,7 +131,7 @@ class SmartLightGroup(LightGroup):
         self._auto_adapt_white_value: bool = conf.get(AUTO_ADAPT_WHITE_VALUE)
         self._threshold_lower_temperature_white_lights: int = conf.get(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS)
         self._threshold_upper_temperature_white_lights: int = conf.get(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS)
-        self._threshold_upper_saturation_white_lights: int = conf.get(UPPER_BOUND_SATURATION_WHITE_LIGHTS)
+        self._threshold_upper_saturation_white_lights: float = conf.get(UPPER_BOUND_SATURATION_WHITE_LIGHTS)
         self._threshold_lower_brightness_non_dimmable_lights: int = conf.get(LOWER_BOUND_BRIGHTNESS_NON_DIMMABLE_LIGHTS)
         self._empty_turn_on_is_reset_to_default: bool = True
         self._color_temp_before_hs_color: bool = True
@@ -226,52 +226,47 @@ class SmartLightGroup(LightGroup):
         # old_emulated_temperature_as_hs_color = self._hs_color_for_temperature(old_color_temp)
         # old_emulated_white_value = self._calculate_white_value(old_hs_color)
 
+        supplied_brightness = ATTR_BRIGHTNESS in kwargs
+        supplied_color_temp = ATTR_COLOR_TEMP in kwargs
+        supplied_hs_color = ATTR_HS_COLOR in kwargs
+        supplied_white_value = ATTR_WHITE_VALUE in kwargs
+
+        no_light_attr_supplied = not supplied_brightness and not supplied_color_temp and not supplied_hs_color and not supplied_white_value
+        is_reset_to_default = (self._empty_turn_on_is_reset_to_default or was_off) and no_light_attr_supplied
+        allow_using_old_values = not is_reset_to_default
+
         new_brightness = self._default_brightness
-        supplied_brightness = False
         using_old_brightness = False
-        if ATTR_BRIGHTNESS in kwargs:
+        if supplied_brightness:
             new_brightness = kwargs[ATTR_BRIGHTNESS]
-            supplied_brightness = True
-        elif old_brightness is not None:
+        elif old_brightness is not None and allow_using_old_values:
             new_brightness = old_brightness
             using_old_brightness = True
 
-        # apply_default_color_temp = ATTR_HS_COLOR not in kwargs
-        # apply_default_hs_color = self._auto_convert_temp_to_hs and (ATTR_COLOR_TEMP not in kwargs)
-        # apply_default_white_value = self._auto_adapt_white_value and (ATTR_HS_COLOR not in kwargs) and (ATTR_COLOR_TEMP not in kwargs)
-
         new_color_temp = self._default_color_temp
-        supplied_color_temp = False
         using_old_color_temp = False
-        if ATTR_COLOR_TEMP in kwargs:
+        if supplied_color_temp:
             new_color_temp = kwargs[ATTR_COLOR_TEMP]
-            supplied_color_temp = True
-        elif old_color_temp is not None:
+        elif old_color_temp is not None and allow_using_old_values:
             new_color_temp = old_color_temp
             using_old_color_temp = True
 
         new_hs_color = (self._default_h, self._default_s)
-        supplied_hs_color = False
         using_old_hs_color = False
-        if ATTR_HS_COLOR in kwargs:
+        if supplied_hs_color:
             new_hs_color = kwargs[ATTR_HS_COLOR]
-            supplied_hs_color = True
-        elif old_hs_color is not None:
+        elif old_hs_color is not None and allow_using_old_values:
             new_hs_color = old_hs_color
             using_old_hs_color = True
 
         new_white_value = self._default_white_value
-        supplied_white_value = False
         using_old_white_value = False
-        if ATTR_WHITE_VALUE in kwargs:
+        if supplied_white_value:
             new_white_value = kwargs[ATTR_WHITE_VALUE]
-            supplied_white_value = True
-        elif old_white_value is not None:
+        elif old_white_value is not None and allow_using_old_values:
             new_white_value = old_white_value
             using_old_white_value = True
 
-        no_light_attr_supplied = not supplied_brightness and not supplied_color_temp and not supplied_hs_color and not supplied_white_value
-        is_reset_to_default = (self._empty_turn_on_is_reset_to_default or was_off) and no_light_attr_supplied
 
         _LOGGER.debug(self._name + " after value updates: " + "Kwargs " + str(kwargs) +
                       ", supplied_brightness: " + str(supplied_brightness) +
@@ -322,14 +317,16 @@ class SmartLightGroup(LightGroup):
         else:
             # If color temp given use it to determine settings for non_dimmable, dimmable
             new_non_dimmable_on = self._non_dimmable_on_by_temperature(new_brightness, new_color_temp)
-            new_brightness_for_dimmable = self._brightness_for_dimmable_by_saturation(new_brightness, new_color_temp)
+            new_brightness_for_dimmable = self._brightness_for_dimmable_by_temperature(new_brightness, new_color_temp)
             # if color temp specified, temperature lights may use regular brightness
             new_brightness_for_temperature = new_brightness
 
         use_color_temp_for_temperature_and_color_entities = not hs_color_has_newer_value_than_color_temp and self._color_temp_before_hs_color
 
         _LOGGER.debug(self._name + " adaptions: " +
-                      "do_convert_temp_to_hs: " + str(do_convert_temp_to_hs) +
+                      "no_light_attr_supplied: " + str(no_light_attr_supplied) +
+                      ", is_reset_to_default: " + str(is_reset_to_default) +
+                      ", do_convert_temp_to_hs: " + str(do_convert_temp_to_hs) +
                       ", color_temp_has_newer_value_than_hs_color: " + str(color_temp_has_newer_value_than_hs_color) +
                       ", hs_color_has_newer_value_than_color_temp: " + str(hs_color_has_newer_value_than_color_temp) +
                       ", use_color_temp_for_temperature_and_color_entities: " + str(use_color_temp_for_temperature_and_color_entities) +
