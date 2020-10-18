@@ -53,6 +53,7 @@ DEFAULT_COLOR_TEMP = "default_color_temp"
 DEFAULT_H = "default_h"
 DEFAULT_S = "default_s"
 DEFAULT_WHITE_VALUE = "default_white_value"
+DEFAULT_EFFECT = "default_effect"
 
 LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "lower_bound_color_temperature_white_lights"
 UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS = "upper_bound_color_temperature_white_lights"
@@ -71,6 +72,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(DEFAULT_H, default=50): cv.positive_int,
         vol.Optional(DEFAULT_S, default=40): cv.positive_int,
         vol.Optional(DEFAULT_WHITE_VALUE, default=255): cv.positive_int,
+        vol.Optional(DEFAULT_EFFECT, default="Solid"): cv.string,
 
         vol.Optional(LOWER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=175): cv.positive_int,
         vol.Optional(UPPER_BOUND_COLOR_TEMPERATURE_WHITE_LIGHTS, default=450): cv.positive_int,
@@ -126,6 +128,7 @@ class SmartLightGroup(LightGroup):
         self._default_h: float = conf.get(DEFAULT_H) * 1.0
         self._default_s: float = conf.get(DEFAULT_S) * 1.0
         self._default_white_value: int = conf.get(DEFAULT_WHITE_VALUE)
+        self._default_effect: str = conf.get(DEFAULT_EFFECT)
 
         self._auto_convert_temp_to_hs: bool = conf.get(AUTO_CONVERT_COLOR_TEMPERATURE_TO_HS)
         self._auto_adapt_white_value: bool = conf.get(AUTO_ADAPT_WHITE_VALUE)
@@ -170,6 +173,7 @@ class SmartLightGroup(LightGroup):
         """Forward the turn_on command to all lights in the light group."""
         was_off = not self._is_on
 
+        effect_and_temperature_and_color_entity_ids = []
         temperature_and_color_entity_ids = []
         color_and_white_entity_ids = []
         color_entity_ids = []
@@ -187,8 +191,11 @@ class SmartLightGroup(LightGroup):
             sup_col = bool(support & SUPPORT_COLOR)
             sup_white_value = bool(support & SUPPORT_WHITE_VALUE)
             sup_temp = bool(support & SUPPORT_COLOR_TEMP)
+            sup_effect = bool(support & SUPPORT_EFFECT)
 
-            if sup_bri and sup_col and sup_temp:
+            if sup_effect and sup_bri and sup_col and sup_temp:
+                effect_and_temperature_and_color_entity_ids.append(entity_id)  # wled
+            elif sup_bri and sup_col and sup_temp:
                 temperature_and_color_entity_ids.append(entity_id)  # hue color
             elif sup_bri and sup_col and sup_white_value:
                 color_and_white_entity_ids.append(entity_id)  # rgbw strips
@@ -202,7 +209,8 @@ class SmartLightGroup(LightGroup):
                 non_dimmable_entity_ids.append(entity_id)  # regular white on/off light
 
         _LOGGER.debug(self._name + ": " +
-                      "Entities: temperature_and_color: " + str(temperature_and_color_entity_ids) +
+                      "Entities: effect_and_temperature_and_color: " + str(effect_and_temperature_and_color_entity_ids) +
+                      ", temperature_and_color: " + str(temperature_and_color_entity_ids) +
                       ", color_and_white: " + str(color_and_white_entity_ids) +
                       ", color: " + str(color_entity_ids) +
                       ", temperature: " + str(temperature_entity_ids) +
@@ -213,13 +221,15 @@ class SmartLightGroup(LightGroup):
         old_color_temp = self._color_temp
         old_hs_color = self._hs_color
         old_white_value = self._white_value
+        old_effect = self._effect
 
         _LOGGER.debug(self._name + ": " + "Old Values:"
                                           " old_on: " + str(not was_off) +
                       ", old_brightness: " + str(old_brightness) +
                       ", old_color_temp: " + str(old_color_temp) +
                       ", old_hs_color: " + str(old_hs_color) +
-                      ", old_white_value: " + str(old_white_value))
+                      ", old_white_value: " + str(old_white_value) +
+                      ", old_effect: " + str(old_effect))
 
         # old_non_dimmable_on = self._non_dimmable_on(old_brightness, old_hs_color[1])
         # old_brightness_temperature = self._brightness_for_temperature(old_brightness, old_hs_color[1])
@@ -230,6 +240,7 @@ class SmartLightGroup(LightGroup):
         supplied_color_temp = ATTR_COLOR_TEMP in kwargs
         supplied_hs_color = ATTR_HS_COLOR in kwargs
         supplied_white_value = ATTR_WHITE_VALUE in kwargs
+        supplied_effect = ATTR_EFFECT in kwargs
 
         no_light_attr_supplied = not supplied_brightness and not supplied_color_temp and not supplied_hs_color and not supplied_white_value
         is_reset_to_default = (self._empty_turn_on_is_reset_to_default or was_off) and no_light_attr_supplied
@@ -266,6 +277,14 @@ class SmartLightGroup(LightGroup):
         elif old_white_value is not None and allow_using_old_values:
             new_white_value = old_white_value
             using_old_white_value = True
+
+        new_effect = self._default_effect
+        using_old_effect = False
+        if supplied_effect:
+            new_effect = kwargs[ATTR_EFFECT]
+        elif old_effect is not None and allow_using_old_values:
+            new_effect = old_effect
+            using_old_effect = True
 
 
         _LOGGER.debug(self._name + " after value updates: " + "Kwargs " + str(kwargs) +
@@ -304,6 +323,8 @@ class SmartLightGroup(LightGroup):
             new_white_value = self._calculate_white_value(new_hs_color, new_brightness)
         apply_white_value = supplied_white_value or do_adapt_white_value or apply_all_attributes
 
+        apply_effect = supplied_effect or apply_all_attributes
+
         # Determine which source to use for configuring dimmable and non dimmable lights
         hs_color_has_newer_value_than_color_temp = not supplied_color_temp and (
                 supplied_hs_color or (using_old_hs_color and not using_old_color_temp))
@@ -336,13 +357,15 @@ class SmartLightGroup(LightGroup):
                       ", apply_brightness: " + str(apply_brightness) +
                       ", apply_color_temp: " + str(apply_color_temp) +
                       ", apply_hs_color: " + str(apply_hs_color) +
-                      ", apply_white_value: " + str(apply_white_value))
+                      ", apply_white_value: " + str(apply_white_value) +
+                      ", apply_effect: " + str(apply_effect))
 
         _LOGGER.info(self._name + ": " + "New Values Final: " +
                       "new_brightness: " + str(new_brightness) +
                       ", new_color_temp: " + str(new_color_temp) +
                       ", new_hs_color: " + str(new_hs_color) +
                       ", new_white_value: " + str(new_white_value) +
+                      ", new_effect: " + str(new_effect) +
                       ", new_non_dimmable_on: " + str(new_non_dimmable_on) +
                       ", new_brightness_for_dimmable: " + str(new_brightness_for_dimmable) +
                       ", new_brightness_for_temperature: " + str(new_brightness_for_temperature) +
@@ -432,6 +455,26 @@ class SmartLightGroup(LightGroup):
             data = {}
             data[ATTR_ENTITY_ID] = temperature_and_color_entity_ids
             data[ATTR_BRIGHTNESS] = new_brightness
+            if use_color_temp_for_temperature_and_color_entities:
+                data[ATTR_COLOR_TEMP] = new_color_temp
+            else:
+                data[ATTR_HS_COLOR] = new_hs_color
+
+            commands.append(
+                self.hass.services.async_call(
+                    light.DOMAIN,
+                    light.SERVICE_TURN_ON,
+                    data,
+                    blocking=True,
+                    context=self._context,
+                )
+            )
+
+        if effect_and_temperature_and_color_entity_ids:
+            data = {}
+            data[ATTR_ENTITY_ID] = temperature_and_color_entity_ids
+            data[ATTR_BRIGHTNESS] = new_brightness
+            data[ATTR_EFFECT] = new_effect
             if use_color_temp_for_temperature_and_color_entities:
                 data[ATTR_COLOR_TEMP] = new_color_temp
             else:
