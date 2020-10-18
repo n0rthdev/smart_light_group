@@ -292,7 +292,7 @@ class SmartLightGroup(LightGroup):
         do_convert_temp_to_hs = self._auto_convert_temp_to_hs and not is_reset_to_default and color_temp_has_newer_value_than_hs_color
         if do_convert_temp_to_hs:
             new_hs_color = self._hs_color_for_temperature(new_color_temp)
-            supplied_hs_color = True
+            # supplied_hs_color = True # i think supplied_hs_color to true is actually wrong but not sure yet 2020-10-18
         apply_hs_color = supplied_hs_color or do_convert_temp_to_hs or apply_all_attributes
 
         # Adapt white_value if other values have a more recent value, and auto adapt is enabled
