@@ -109,19 +109,7 @@ class SmartLightGroup(LightGroup):
 
     def __init__(self, name: str, entity_ids: List[str], conf: Dict[str, Any]) -> None:
         """Initialize a light group."""
-        self._name = name
-        self._entity_ids = entity_ids
-        self._is_on = False
-        self._available = False
-        self._brightness: Optional[int] = None
-        self._hs_color: Optional[Tuple[float, float]] = None
-        self._color_temp: Optional[int] = None
-        self._min_mireds: Optional[int] = 154
-        self._max_mireds: Optional[int] = 500
-        self._white_value: Optional[int] = None
-        self._effect_list: Optional[List[str]] = None
-        self._effect: Optional[str] = None
-        self._supported_features: int = 0
+        super().__init__(name, entity_ids)
 
         self._default_brightness: int = conf.get(DEFAULT_BRIGHTNESS)
         self._default_color_temp: int = conf.get(DEFAULT_COLOR_TEMP)
