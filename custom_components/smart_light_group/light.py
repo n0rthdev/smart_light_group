@@ -5,14 +5,21 @@ from typing import Any, Callable, Iterator, List, Optional, Tuple, cast, Dict
 
 import voluptuous as vol
 
+from collections.abc import Iterable
+
 from homeassistant.components import light
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP,
+    ATTR_COLOR_MODE,
     ATTR_EFFECT,
     ATTR_EFFECT_LIST,
     ATTR_FLASH,
     ATTR_HS_COLOR,
+    ATTR_RGB_COLOR,
+    ATTR_RGBW_COLOR,
+    ATTR_RGBWW_COLOR,
+    ATTR_SUPPORTED_COLOR_MODES,
     ATTR_MAX_MIREDS,
     ATTR_MIN_MIREDS,
     ATTR_TRANSITION,
@@ -25,6 +32,14 @@ from homeassistant.components.light import (
     SUPPORT_FLASH,
     SUPPORT_TRANSITION,
     SUPPORT_WHITE_VALUE,
+    COLOR_MODE_HS,
+    COLOR_MODE_RGB,
+    COLOR_MODE_RGBW,
+    COLOR_MODE_RGBWW,
+    COLOR_MODE_XY,
+    color_temp_supported,
+    color_supported,
+    brightness_supported,
 )
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -43,6 +58,15 @@ from homeassistant.components.group.light import LightGroup
 
 # mypy: allow-incomplete-defs, allow-untyped-calls, allow-untyped-defs
 # mypy: no-check-untyped-defs
+
+WHITE_CHANNEL_MODES_COLOR = {
+    COLOR_MODE_HS,
+    COLOR_MODE_RGB,
+    COLOR_MODE_RGBW,
+    COLOR_MODE_RGBWW,
+    COLOR_MODE_XY,
+}
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +126,13 @@ async def async_setup_platform(
     async_add_entities(
         [SmartLightGroup(cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES], config)]
     )
+
+
+def white_channel_supported(color_modes):
+    """Test if white_channel is supported."""
+    if not color_modes:
+        return False
+    return any(mode in WHITE_CHANNEL_MODES_COLOR for mode in color_modes)
 
 
 class SmartLightGroup(LightGroup):
@@ -174,11 +205,12 @@ class SmartLightGroup(LightGroup):
             if not state:
                 continue
             support = state.attributes.get(ATTR_SUPPORTED_FEATURES)
+            supported_color_modes = state.attributes.get(ATTR_SUPPORTED_COLOR_MODES)
 
-            sup_bri = bool(support & SUPPORT_BRIGHTNESS)
-            sup_col = bool(support & SUPPORT_COLOR)
-            sup_white_value = bool(support & SUPPORT_WHITE_VALUE)
-            sup_temp = bool(support & SUPPORT_COLOR_TEMP)
+            sup_bri = brightness_supported(supported_color_modes) # bool(support & SUPPORT_BRIGHTNESS)
+            sup_col = color_supported(supported_color_modes) # bool(support & SUPPORT_COLOR)
+            sup_white_value = white_channel_supported(supported_color_modes) # bool(support & SUPPORT_WHITE_VALUE)
+            sup_temp = color_temp_supported(supported_color_modes) # bool(support & SUPPORT_COLOR_TEMP)
             sup_effect = bool(support & SUPPORT_EFFECT)
 
             if sup_effect and sup_bri and sup_col and sup_temp:
