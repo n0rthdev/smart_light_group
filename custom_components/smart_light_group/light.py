@@ -32,6 +32,7 @@ from homeassistant.components.light import (
     SUPPORT_FLASH,
     SUPPORT_TRANSITION,
     SUPPORT_WHITE_VALUE,
+    COLOR_MODE_COLOR_TEMP,
     COLOR_MODE_HS,
     COLOR_MODE_RGB,
     COLOR_MODE_RGBW,
@@ -188,9 +189,14 @@ class SmartLightGroup(LightGroup):
         else:
             return 0
 
+    @property
+    def supported_color_modes(self) -> set:
+        """Flag supported color modes."""
+        return set([COLOR_MODE_HS, COLOR_MODE_COLOR_TEMP])
+
     async def async_turn_on(self, **kwargs):
         """Forward the turn_on command to all lights in the light group."""
-        was_off = not self._is_on
+        was_off = not self._attr_is_on
 
         effect_and_temperature_and_color_entity_ids = []
         temperature_and_color_entity_ids = []
@@ -228,7 +234,7 @@ class SmartLightGroup(LightGroup):
             else:
                 non_dimmable_entity_ids.append(entity_id)  # regular white on/off light
 
-        _LOGGER.debug(self._name + ": " +
+        _LOGGER.debug(self._attr_name + ": " +
                       "Entities: effect_and_temperature_and_color: " + str(effect_and_temperature_and_color_entity_ids) +
                       ", temperature_and_color: " + str(temperature_and_color_entity_ids) +
                       ", color_and_white: " + str(color_and_white_entity_ids) +
@@ -237,13 +243,13 @@ class SmartLightGroup(LightGroup):
                       ", dimmable: " + str(dimmable_entity_ids) +
                       ", non_dimmable: " + str(non_dimmable_entity_ids))
 
-        old_brightness = self._brightness
-        old_color_temp = self._color_temp
-        old_hs_color = self._hs_color
+        old_brightness = self._attr_brightness
+        old_color_temp = self._attr_color_temp
+        old_hs_color = self._attr_hs_color
         old_white_value = self._white_value
-        old_effect = self._effect
+        old_effect = self._attr_effect
 
-        _LOGGER.debug(self._name + ": " + "Old Values:"
+        _LOGGER.debug(self._attr_name + ": " + "Old Values:"
                                           " old_on: " + str(not was_off) +
                       ", old_brightness: " + str(old_brightness) +
                       ", old_color_temp: " + str(old_color_temp) +
@@ -307,13 +313,13 @@ class SmartLightGroup(LightGroup):
             using_old_effect = True
 
 
-        _LOGGER.debug(self._name + " after value updates: " + "Kwargs " + str(kwargs) +
+        _LOGGER.debug(self._attr_name + " after value updates: " + "Kwargs " + str(kwargs) +
                       ", supplied_brightness: " + str(supplied_brightness) +
                       ", supplied_color_temp: " + str(supplied_color_temp) +
                       ", supplied_hs_color: " + str(supplied_hs_color) +
                       ", supplied_white_value: " + str(supplied_white_value))
 
-        _LOGGER.debug(self._name + " after value updates: " + "New Values: " +
+        _LOGGER.debug(self._attr_name + " after value updates: " + "New Values: " +
                       ", new_brightness: " + str(new_brightness) +
                       ", new_color_temp: " + str(new_color_temp) +
                       ", new_hs_color: " + str(new_hs_color) +
@@ -348,7 +354,7 @@ class SmartLightGroup(LightGroup):
         # Determine which source to use for configuring dimmable and non dimmable lights
         hs_color_has_newer_value_than_color_temp = not supplied_color_temp and (
                 supplied_hs_color or (using_old_hs_color and not using_old_color_temp))
-    
+
         if hs_color_has_newer_value_than_color_temp:
             # Only if HS is given and no color temp is given use HS to determine settings for non_dimmable, dimmable
             new_non_dimmable_on = self._non_dimmable_on_by_saturation(new_brightness, new_hs_color[1])
@@ -364,7 +370,7 @@ class SmartLightGroup(LightGroup):
 
         use_color_temp_for_temperature_and_color_entities = not hs_color_has_newer_value_than_color_temp and self._color_temp_before_hs_color
 
-        _LOGGER.debug(self._name + " adaptions: " +
+        _LOGGER.debug(self._attr_name + " adaptions: " +
                       "no_light_attr_supplied: " + str(no_light_attr_supplied) +
                       ", is_reset_to_default: " + str(is_reset_to_default) +
                       ", do_convert_temp_to_hs: " + str(do_convert_temp_to_hs) +
@@ -373,14 +379,14 @@ class SmartLightGroup(LightGroup):
                       ", use_color_temp_for_temperature_and_color_entities: " + str(use_color_temp_for_temperature_and_color_entities) +
                       ", do_adapt_white_value: " + str(do_adapt_white_value))
 
-        _LOGGER.debug(self._name + " after auto value adaptions: " + "Kwargs " + str(kwargs) +
+        _LOGGER.debug(self._attr_name + " after auto value adaptions: " + "Kwargs " + str(kwargs) +
                       ", apply_brightness: " + str(apply_brightness) +
                       ", apply_color_temp: " + str(apply_color_temp) +
                       ", apply_hs_color: " + str(apply_hs_color) +
                       ", apply_white_value: " + str(apply_white_value) +
                       ", apply_effect: " + str(apply_effect))
 
-        _LOGGER.info(self._name + ": " + "New Values Final: " +
+        _LOGGER.info(self._attr_name + ": " + "New Values Final: " +
                       "new_brightness: " + str(new_brightness) +
                       ", new_color_temp: " + str(new_color_temp) +
                       ", new_hs_color: " + str(new_hs_color) +
@@ -396,7 +402,7 @@ class SmartLightGroup(LightGroup):
         if non_dimmable_entity_ids:
             data = {}
             data[ATTR_ENTITY_ID] = non_dimmable_entity_ids
-
+            _LOGGER.info("Sending data to non_dimmable_entity_ids: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
@@ -411,7 +417,7 @@ class SmartLightGroup(LightGroup):
             data = {}
             data[ATTR_ENTITY_ID] = dimmable_entity_ids
             data[ATTR_BRIGHTNESS] = new_brightness_for_dimmable
-
+            _LOGGER.info("Sending data to dimmable_entity_ids: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
@@ -427,7 +433,7 @@ class SmartLightGroup(LightGroup):
             data[ATTR_ENTITY_ID] = temperature_entity_ids
             data[ATTR_BRIGHTNESS] = new_brightness_for_temperature
             data[ATTR_COLOR_TEMP] = new_color_temp
-
+            _LOGGER.info("Sending data to temperature_entity_ids: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
@@ -444,7 +450,7 @@ class SmartLightGroup(LightGroup):
             data[ATTR_BRIGHTNESS] = new_brightness
             data[ATTR_HS_COLOR] = new_hs_color
             data[ATTR_WHITE_VALUE] = new_white_value
-
+            _LOGGER.info("Sending data to color_and_white_entity_ids: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
@@ -460,7 +466,7 @@ class SmartLightGroup(LightGroup):
             data[ATTR_ENTITY_ID] = color_entity_ids
             data[ATTR_BRIGHTNESS] = new_brightness
             data[ATTR_HS_COLOR] = new_hs_color
-
+            _LOGGER.info("Sending data to color_entity_ids: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
@@ -479,7 +485,7 @@ class SmartLightGroup(LightGroup):
                 data[ATTR_COLOR_TEMP] = new_color_temp
             else:
                 data[ATTR_HS_COLOR] = new_hs_color
-
+            _LOGGER.info("Sending data to temperature_and_color_entity_ids: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
@@ -492,14 +498,14 @@ class SmartLightGroup(LightGroup):
 
         if effect_and_temperature_and_color_entity_ids:
             data = {}
-            data[ATTR_ENTITY_ID] = temperature_and_color_entity_ids
+            data[ATTR_ENTITY_ID] = effect_and_temperature_and_color_entity_ids
             data[ATTR_BRIGHTNESS] = new_brightness
             data[ATTR_EFFECT] = new_effect
             if use_color_temp_for_temperature_and_color_entities:
                 data[ATTR_COLOR_TEMP] = new_color_temp
             else:
                 data[ATTR_HS_COLOR] = new_hs_color
-
+            _LOGGER.info("Sending data to effect_and_temperature_and_color: " + str(data))
             commands.append(
                 self.hass.services.async_call(
                     light.DOMAIN,
