@@ -125,7 +125,7 @@ async def async_setup_platform(
 ) -> None:
     """Initialize light.group platform."""
     async_add_entities(
-        [SmartLightGroup(cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES], config)]
+        [SmartLightGroup(None, cast(str, config.get(CONF_NAME)), config[CONF_ENTITIES], config)]
     )
 
 
@@ -139,9 +139,9 @@ def white_channel_supported(color_modes):
 class SmartLightGroup(LightGroup):
     """Representation of a light group."""
 
-    def __init__(self, name: str, entity_ids: List[str], conf: Dict[str, Any]) -> None:
+    def __init__(self, unique_id, name: str, entity_ids: list[str], conf: Dict[str, Any]) -> None:
         """Initialize a light group."""
-        super().__init__(name, entity_ids)
+        super().__init__(unique_id, name, entity_ids)
 
         self._default_brightness: int = conf.get(DEFAULT_BRIGHTNESS)
         self._default_color_temp: int = conf.get(DEFAULT_COLOR_TEMP)
